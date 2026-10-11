@@ -16,8 +16,9 @@ import streamlit as st
 
 from backtesting.engine import BacktestEngine
 from inspection.ast_inspector import inspect_strategy_source
-from llm.explainer import OllamaExplainer
+from llm.unified_explainer import UnifiedExplainer
 from metrics.performance import calculate_metrics
+from notifications.telegram import TelegramNotifier
 from reporting.report_generator import generate_report
 from storage.db import RunDatabase
 from strategies.moving_average import MovingAverageCrossover
@@ -31,15 +32,26 @@ st.set_page_config(
 )
 
 db = RunDatabase()
-explainer = OllamaExplainer()
+
+# Sidebar for Cloud AI / API Keys
+with st.sidebar:
+    st.header("⚙️ Configuration")
+    cloud_key = st.text_input(
+        "Cloud AI Key (Groq / OpenAI - Optional):",
+        type="password",
+        help="Leave empty to use local Ollama model directly.",
+    )
+    st.caption("Default: Local Ollama (qwen2.5:1.5b) when running on local PC.")
+
+explainer = UnifiedExplainer(api_key=cloud_key if cloud_key else None)
 
 st.title("🛡️ BacktestGuard AI — Verification & Audit Platform")
 st.markdown(
     "Detect data anomalies, look-ahead bias, and unrealistic backtest assumptions before deploying strategies."
 )
 
-tab_audit, tab_code, tab_history = st.tabs(
-    ["🚀 Full Audit & Backtest", "🔍 AST Code Inspector", "📜 Run History"]
+tab_audit, tab_code, tab_telegram, tab_history = st.tabs(
+    ["🚀 Full Audit & Backtest", "🔍 AST Code Inspector", "📱 Telegram Alerts & Automation", "📜 Run History"]
 )
 
 # -----------------------------------------------------------------------------
@@ -201,7 +213,79 @@ with tab_code:
                 st.caption(f"Evidence: `{f.evidence}` | Fix: {f.recommendation}")
 
 # -----------------------------------------------------------------------------
-# TAB 3: HISTORY
+# TAB 3: TELEGRAM ALERTS & AUTOMATION
+# -----------------------------------------------------------------------------
+with tab_telegram:
+    st.subheader("📱 Automated Mobile Alerts via Telegram")
+    st.markdown(
+        "Receive instant push notifications after market close with data integrity audits, "
+        "strategy execution signals, and AI mentor explanations."
+    )
+
+    t_col1, t_col2 = st.columns(2)
+    with t_col1:
+        st.markdown("#### 1. Configure Telegram Bot")
+        st.caption("Create a free bot on Telegram via **@BotFather** to get your token.")
+        bot_token = st.text_input("Telegram Bot Token:", type="password", placeholder="e.g. 123456789:ABCdefGhIJKlmNoPQR")
+        chat_id = st.text_input("Your Telegram Chat ID:", placeholder="e.g. 987654321")
+
+        if st.button("🔔 Send Test Handshake Notification"):
+            notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+            success, msg = notifier.test_connection()
+            if success:
+                st.success(f"✅ {msg} Check your Telegram app!")
+            else:
+                st.error(f"❌ {msg}")
+
+    with t_col2:
+        st.markdown("#### 2. Schedule Daily Monitoring")
+        st.caption("BacktestGuard will automatically audit this asset and send the report with AI explanation.")
+        monitored_ticker = st.text_input("Monitored Asset / Ticker:", value="AAPL")
+        monitored_strat = st.selectbox("Strategy to Monitor:", ["RSI Mean Reversion (14, 30/70)", "MA Crossover (10, 30)"])
+
+        if st.button("🚀 Trigger Instant Audit & Send Telegram Alert", type="primary"):
+            notifier = TelegramNotifier(bot_token=bot_token, chat_id=chat_id)
+            if not notifier.is_configured():
+                st.warning("Please fill in both Bot Token and Chat ID first.")
+            else:
+                with st.spinner("Running complete audit and generating AI explanation..."):
+                    # 1. Generate realistic benchmark bars for monitored asset
+                    bars = 100
+                    dates = pd.date_range("2024-01-01", periods=bars, freq="B")
+                    np.random.seed(42)
+                    returns = np.random.normal(0.0005, 0.015, size=bars)
+                    price_path = 150.0 * np.cumprod(1.0 + returns)
+                    sim_df = pd.DataFrame(
+                        {
+                            "Open": price_path * (1 - 0.002),
+                            "High": price_path * (1 + 0.005),
+                            "Low": price_path * (1 - 0.005),
+                            "Close": price_path,
+                            "Volume": 1_500_000,
+                        },
+                        index=dates,
+                    )
+                    data_res = validate_ohlcv(sim_df)
+                    strat = RSIMeanReversion() if "RSI" in monitored_strat else MovingAverageCrossover()
+                    engine = BacktestEngine()
+                    bt_res = engine.run(sim_df, strat)
+                    metrics = calculate_metrics(bt_res)
+                    report = generate_report(data_result=data_res, metrics=metrics)
+
+                    # 2. Generate AI Explanation
+                    ai_text = explainer.explain(report)
+
+                    # 3. Dispatch to Telegram
+                    ok, send_msg = notifier.send_audit_alert(report, ticker=monitored_ticker, ai_explanation=ai_text)
+                    if ok:
+                        st.success(f"✅ Alert delivered to your phone! ({send_msg})")
+                        st.markdown("### Preview of Sent Message:")
+                        st.info(ai_text)
+                    else:
+                        st.error(f"❌ Delivery failed: {send_msg}")
+
+# -----------------------------------------------------------------------------
+# TAB 4: HISTORY
 # -----------------------------------------------------------------------------
 with tab_history:
     st.subheader("Audit Logs & Stored Runs")
