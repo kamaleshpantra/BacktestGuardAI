@@ -6,9 +6,6 @@ FastAPI service exposing validation and backtesting workflows.
 
 from __future__ import annotations
 
-import io
-
-import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
@@ -60,7 +57,8 @@ async def validate_dataset(file: UploadFile = File(...)):
     """Validate uploaded CSV file against OHLCV rules."""
     try:
         contents = await file.read()
-        df = pd.read_csv(io.BytesIO(contents), parse_dates=True, index_col=0)
+        from data.loader import load_csv
+        df = load_csv(contents)
         res = validate_ohlcv(df)
         return {
             "passed": res.passed,

@@ -78,8 +78,11 @@ with tab_audit:
             uploaded = st.file_uploader("Upload OHLCV CSV file:", type=["csv"])
             if uploaded:
                 try:
-                    df = pd.read_csv(uploaded, parse_dates=True, index_col=0)
-                    st.info(f"Loaded {len(df)} rows.")
+                    from data.loader import load_csv
+                    df = load_csv(uploaded)
+                    st.info(f"Loaded and normalized {len(df)} rows.")
+                    with st.expander("Preview Normalized Data"):
+                        st.dataframe(df.head(5), use_container_width=True)
                 except Exception as e:
                     st.error(f"Error loading CSV: {e}")
 
