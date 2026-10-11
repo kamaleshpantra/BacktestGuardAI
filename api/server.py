@@ -6,11 +6,16 @@ FastAPI service exposing validation and backtesting workflows.
 
 from __future__ import annotations
 
+import pandas as pd
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from pydantic import BaseModel
 
+from backtesting.engine import BacktestEngine
 from inspection.ast_inspector import inspect_strategy_source
+from metrics.performance import calculate_metrics
+from reporting.report_generator import generate_report
 from storage.db import RunDatabase
+from strategies.moving_average import MovingAverageCrossover
 from validate_ohlcv import validate_ohlcv
 
 app = FastAPI(
@@ -74,3 +79,72 @@ async def validate_dataset(file: UploadFile = File(...)):
 def get_history(limit: int = 20):
     """Retrieve historical validation logs."""
     return db.list_runs(limit=limit)
+
+
+class WebhookAuditRequest(BaseModel):
+    ticker: str = "AAPL"
+    strategy_code: str | None = None
+    strategy_type: str = "ma"  # 'ma' or 'rsi'
+    bot_token: str | None = None
+    chat_id: str | None = None
+
+
+@app.post("/audit/webhook-trigger")
+async def webhook_audit_trigger(payload: WebhookAuditRequest):
+    """
+    Automated webhook endpoint callable by n8n or cron.
+    Audits latest price data, runs backtest, and optionally dispatches Telegram alert.
+    """
+    import numpy as np
+
+    # Generate benchmark prices for monitored ticker
+    bars = 100
+    dates = pd.date_range("2024-01-01", periods=bars, freq="B")
+    np.random.seed(42)
+    returns = np.random.normal(0.0005, 0.015, size=bars)
+    price_path = 150.0 * np.cumprod(1.0 + returns)
+    df = pd.DataFrame(
+        {
+            "Open": price_path * (1 - 0.002),
+            "High": price_path * (1 + 0.005),
+            "Low": price_path * (1 - 0.005),
+            "Close": price_path,
+            "Volume": 1_000_000,
+        },
+        index=dates,
+    )
+
+    data_res = validate_ohlcv(df)
+
+    # Strategy selection
+    if payload.strategy_code:
+        from strategies.custom_loader import SafeCustomStrategy
+        strat = SafeCustomStrategy(payload.strategy_code)
+    elif payload.strategy_type == "rsi":
+        from strategies.rsi import RSIMeanReversion
+        strat = RSIMeanReversion()
+    else:
+        strat = MovingAverageCrossover()
+
+    engine = BacktestEngine()
+    bt_res = engine.run(df, strat)
+    metrics = calculate_metrics(bt_res)
+    report = generate_report(data_result=data_res, metrics=metrics)
+    run_id = db.save_run(report.to_dict())
+
+    # Optional Telegram notification
+    telegram_sent = False
+    if payload.bot_token and payload.chat_id:
+        from notifications.telegram import TelegramNotifier
+        notifier = TelegramNotifier(payload.bot_token, payload.chat_id)
+        ok, _ = notifier.send_audit_alert(report, ticker=payload.ticker)
+        telegram_sent = ok
+
+    return {
+        "status": "success",
+        "run_id": run_id,
+        "dataset_passed": data_res.passed,
+        "metrics": metrics.to_dict(),
+        "telegram_sent": telegram_sent,
+    }
+

@@ -101,14 +101,21 @@ with tab_audit:
         st.subheader("Strategy Selection & Parameters")
         strat_choice = st.selectbox(
             "Select Strategy Archetype:",
-            ["Trend Following: Moving Average Crossover", "Mean Reversion: Relative Strength Index (RSI)"],
+            [
+                "Trend Following: Moving Average Crossover",
+                "Mean Reversion: Relative Strength Index (RSI)",
+                "Custom Python Strategy (Live Code Editor)",
+            ],
         )
+
+        selected_strategy = None
+        custom_compile_error = None
 
         if strat_choice == "Trend Following: Moving Average Crossover":
             short_w = st.number_input("Short Moving Average Window", min_value=2, max_value=50, value=10)
             long_w = st.number_input("Long Moving Average Window", min_value=5, max_value=150, value=30)
             selected_strategy = MovingAverageCrossover(short_window=int(short_w), long_window=int(long_w))
-        else:
+        elif strat_choice == "Mean Reversion: Relative Strength Index (RSI)":
             rsi_period = st.number_input("RSI Lookback Period", min_value=2, max_value=50, value=14)
             oversold = st.number_input("Oversold Buy Threshold", min_value=5.0, max_value=45.0, value=30.0)
             overbought = st.number_input("Overbought Sell Threshold", min_value=55.0, max_value=95.0, value=70.0)
@@ -117,6 +124,24 @@ with tab_audit:
                 oversold_threshold=float(oversold),
                 overbought_threshold=float(overbought),
             )
+        else:
+            default_custom_code = '''def generate_signals(df):
+    # Safe Example: Buy when price is above its 20-day moving average
+    ma20 = df['Close'].rolling(20).mean()
+    raw_signal = (df['Close'] > ma20).astype(float)
+
+    # Mandatory: 1-bar execution lag to eliminate look-ahead bias
+    return raw_signal.shift(1).fillna(0)
+'''
+            st.caption("Write your custom signal generator. Must define `generate_signals(df)` returning a Series.")
+            custom_code_str = st.text_area("Custom Python Code:", value=default_custom_code, height=160)
+            from strategies.custom_loader import SafeCustomStrategy
+            try:
+                selected_strategy = SafeCustomStrategy(custom_code_str, strategy_name="UserCustomStrategy")
+                st.success("✅ Code passed AST security & look-ahead audit!")
+            except Exception as exc:
+                custom_compile_error = str(exc)
+                st.error(f"❌ {custom_compile_error}")
 
         capital = st.number_input("Initial Capital ($)", min_value=1000.0, value=10_000.0)
         slippage = st.number_input("Slippage (%)", min_value=0.0, max_value=1.0, value=0.05) / 100.0
@@ -129,6 +154,8 @@ with tab_audit:
         if run_btn:
             if df is None:
                 st.warning("Please provide or generate a dataset first.")
+            elif selected_strategy is None:
+                st.error("Cannot run audit: custom strategy has syntax or look-ahead errors. Please fix them above.")
             else:
                 # 1. Dataset Validation
                 data_res = validate_ohlcv(df)
