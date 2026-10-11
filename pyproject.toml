@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "backtestguard"
+version = "0.1.0"
+description = "A local tool for validating trading strategy backtests and detecting common data and code problems."
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "numpy>=1.26",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0",
+    "ruff>=0.4",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Show a short traceback on failures — enough detail without noise.
+addopts = "--tb=short"
+
+[tool.ruff]
+# Target the Python version we are developing on.
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+# E/W = pycodestyle errors and warnings
+# F   = pyflakes (unused imports, undefined names)
+# I   = isort (import ordering)
+select = ["E", "W", "F", "I"]
+
+# D401 enforces imperative mood in docstrings — skipped because it is
+# stylistic and produces noise on beginner-friendly docstrings.
+ignore = ["E501"]
