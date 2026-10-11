@@ -1,197 +1,135 @@
 # BacktestGuard AI
 
-A Python tool that checks your stock-trading backtest for common mistakes before you trust the results.
+A Python tool that checks stock-trading backtests for common data quality issues, look-ahead bias, and unrealistic execution assumptions before you trust the simulated results.
 
 ---
 
 ## Why this exists
 
-Backtests are simulations — you apply a trading strategy to historical price data to see how it would have performed. The problem is that a backtest can show great results even when the code is broken, the data is bad, or the strategy is accidentally "cheating" by looking at future prices.
+Backtests are simulations — you apply a trading strategy to historical price data to see how it would have performed. The problem is that a backtest can show great results even when the code is broken, the data is corrupt, or the strategy is accidentally "cheating" by looking at future prices.
 
 Some common issues that produce misleading backtest results:
 
-- Historical data with missing values, incorrect prices, or duplicate timestamps
+- Historical data with missing values, non-positive prices, or duplicate timestamps
 - Strategies that accidentally use tomorrow's prices to make today's decision (look-ahead bias)
 - Missing transaction costs — commissions and slippage that eat into real-world returns
-- Performance metrics calculated incorrectly (e.g. Sharpe ratio with no risk-free rate adjustment)
+- Unrealistic metrics and lack of reproducibility
 
-BacktestGuard AI runs a set of deterministic checks on your data and strategy code, runs the backtest through a controlled engine, and then uses a local language model (via Ollama) to explain the findings in plain English.
+BacktestGuard AI runs deterministic checks on historical market data and strategy code (using Python's AST), runs simulations through a controlled backtesting engine, and uses a local language model (via Ollama) to explain findings in plain language.
 
-It is a developer tool and a learning project. It does not give financial advice, and passing its checks does not mean a strategy will be profitable in live markets.
-
----
-
-## What it does (current state)
-
-| Feature | Status |
-|---|---|
-| Validate a list of price values | ✅ Done |
-| Validate a full OHLCV DataFrame (Open, High, Low, Close, Volume) | ✅ Done |
-| Detect missing values, bad timestamps, OHLC inconsistencies | ✅ Done |
-| Structured validation findings with severity and evidence | ✅ Done |
-| Strategy code inspection (AST-based) | 🔧 In progress |
-| Backtesting engine (moving-average crossover) | 🔧 In progress |
-| Performance metrics (return, drawdown, Sharpe ratio) | 🔧 In progress |
-| AI explanation via local Ollama model | 🔧 In progress |
-| FastAPI endpoint | 🔧 In progress |
-| Streamlit dashboard | 🔧 In progress |
+It is a developer and research tool. It does not provide financial advice, and passing its checks does not guarantee profitability in live markets.
 
 ---
 
-## Tech stack
+## Current Architecture & Completed Features
 
-| Tool | What it's used for |
-|---|---|
-| Python 3.11 | Core language |
-| pandas | DataFrame manipulation and time-series data |
-| NumPy | Numerical calculations |
-| pytest | Automated tests |
-| Ruff | Linting and formatting |
-| Ollama (`qwen2.5:1.5b`) | Local LLM for explaining findings |
-| FastAPI | REST API layer |
-| Streamlit | Interactive dashboard |
-| SQLite | Storing validation run history |
-
-Everything runs locally. No paid API keys required.
+| Feature Component | Implementation Details | Status |
+|---|---|---|
+| **Price & OHLCV Validation** | Validates flat prices and full OHLCV DataFrames (types, order, nulls, bounds, High/Low consistency) | ✅ Completed (97 tests) |
+| **Strategy Contract & Crossover** | `Strategy` abstract base class, look-ahead safe moving average crossover with 1-bar execution lag | ✅ Completed (25 tests) |
+| **AST Code Inspector** | Static syntax tree analysis detecting `.shift(-N)`, `.rolling(center=True)`, global stats, negative `iloc` | ✅ Completed (49 tests) |
+| **Controlled Backtesting Engine** | Bar-by-bar cash & share accounting, configurable fees and slippage modeling | ✅ Completed (4 tests) |
+| **Performance Analytics** | Return, CAGR, Annualized Volatility, Max Drawdown, Sharpe Ratio, Win Rate | ✅ Completed (2 tests) |
+| **Unified Validation Reports** | JSON & Markdown report generation pairing deterministic checks with metrics | ✅ Completed (1 test) |
+| **Local LLM Explainer** | Ollama integration (`qwen2.5:1.5b`) with grounded prompting & graceful offline fallback | ✅ Completed |
+| **SQLite Run History** | Stores audit runs, metrics, and JSON payloads locally without external databases | ✅ Completed |
+| **FastAPI REST API** | Endpoints for dataset validation, code inspection, and audit history (`api/server.py`) | ✅ Completed |
+| **Streamlit Interactive UI** | Multi-tab dashboard for live backtesting, code inspection, and history review (`app.py`) | ✅ Completed |
 
 ---
 
-## Project structure
+## Tech Stack
+
+- **Core & Data:** Python 3.11, pandas, NumPy
+- **Quality & Testing:** pytest (178 passing tests), Ruff (linter/formatter)
+- **Static Analysis:** Python `ast` module (AST-based static code analysis)
+- **Local AI:** Ollama (`qwen2.5:1.5b` or `qwen2.5-coder:7b`) with `httpx`
+- **Application & Storage:** FastAPI, Streamlit, SQLite
+
+Everything runs locally on your machine with zero paid API subscriptions.
+
+---
+
+## Project Structure
 
 ```
 BacktestGuardAI/
-├── validate_prices.py        # Validates a flat list of price values
-├── validate_ohlcv.py         # Validates a full OHLCV DataFrame
-├── tests/
-│   ├── conftest.py
-│   ├── test_validate_prices.py   # 37 tests
-│   └── test_validate_ohlcv.py    # 60 tests
-├── data/
-│   └── sample/               # Sample datasets for local testing
-├── docs/                     # Architecture notes and design decisions
-├── pyproject.toml            # Project config, dependencies, tool settings
-└── .gitignore
+├── app.py                         # Streamlit interactive dashboard
+├── pyproject.toml                 # Dependencies, pytest, and Ruff configuration
+├── .gitignore                     # Caches, virtualenvs, local databases
+├── validate_prices.py             # Validates flat price lists
+├── validate_ohlcv.py              # Validates full OHLCV DataFrames
+├── strategies/
+│   ├── base.py                    # Strategy abstract base class
+│   └── moving_average.py          # MA Crossover strategy
+├── inspection/
+│   └── ast_inspector.py           # AST look-ahead bias detector
+├── backtesting/
+│   └── engine.py                  # Simulation engine with fees & slippage
+├── metrics/
+│   └── performance.py             # Sharpe ratio, drawdown, CAGR, win rate
+├── reporting/
+│   └── report_generator.py        # Unified report builder
+├── llm/
+│   └── explainer.py               # Local Ollama explanation client
+├── storage/
+│   └── db.py                      # SQLite run logging repository
+├── api/
+│   └── server.py                  # FastAPI REST endpoints
+└── tests/
+    ├── conftest.py                # sys.path root configuration
+    ├── test_validate_prices.py    # 37 tests
+    ├── test_validate_ohlcv.py     # 60 tests
+    ├── test_strategies.py         # 25 tests
+    ├── test_ast_inspector.py      # 49 tests
+    └── test_backtest_and_metrics.py # 7 tests
 ```
 
 ---
 
-## Setup
+## Setup & Quickstart
 
-**Requirements:** Python 3.11+, and [Ollama](https://ollama.com) installed locally (for AI explanations — optional for the validation-only features).
+### 1. Prerequisites
+Python 3.11+ installed. (Optional: [Ollama](https://ollama.com) running for AI explanations).
 
+### 2. Installation
 ```powershell
-# Clone the repository
-git clone https://github.com/your-username/BacktestGuardAI.git
-cd BacktestGuardAI
+# Clone or navigate to the repository
+cd C:\Users\91798\OneDrive\Desktop\BacktestGuardAI
 
-# Create and activate a virtual environment
-python -m venv .venv
-.venv\Scripts\Activate.ps1
-
-# Install dependencies
-pip install pandas numpy pytest ruff
-```
-
----
-
-## Running the tests
-
-```powershell
+# Run tests to verify the setup
 python -m pytest tests/ -v
 ```
 
-Expected output:
+Expected result:
 ```
-97 passed, 1 warning in 1.7s
-```
-
-The one warning is a pandas FutureWarning in a test that deliberately inserts an infinite volume value. It does not affect correctness.
-
----
-
-## How validation works
-
-The core idea is simple: before running any simulation, check every assumption.
-
-**`validate_prices(prices)`** takes a plain Python list and checks:
-- Is it actually a list?
-- Is it non-empty?
-- Is every element a finite, positive number?
-
-It returns a list of error strings. An empty list means all checks passed.
-
-```python
-from validate_prices import validate_prices
-
-errors = validate_prices([100.0, -5.0, float('inf'), 102.0])
-for e in errors:
-    print(e)
-# index 1: price must be positive, got -5.0
-# index 2: price is not finite (inf or -inf or nan)
-```
-
-**`validate_ohlcv(df)`** takes a pandas DataFrame and runs 10 checks:
-
-1. Input is a DataFrame
-2. Required columns exist (Open, High, Low, Close, Volume)
-3. Index is a DatetimeIndex
-4. No duplicate timestamps
-5. Timestamps are in ascending order
-6. No missing (NaN) values
-7. All prices are finite
-8. All prices are strictly positive
-9. Volume is non-negative
-10. OHLC relationships are internally consistent (e.g. High ≥ Open, High ≥ Close)
-
-Each finding is a structured object with a `code`, `severity` (`"error"` or `"warning"`), `description`, `evidence`, and `recommendation`.
-
-```python
-from validate_ohlcv import validate_ohlcv
-
-result = validate_ohlcv(df)
-
-if result.passed:
-    print("Data looks clean.")
-else:
-    for finding in result.errors:
-        print(finding)
-        print("Evidence:", finding.evidence)
-        print("Fix:", finding.recommendation)
+178 passed in ~1.5s
 ```
 
 ---
 
-## Design decisions worth knowing
+## Running the Application
 
-**Why return a list of findings instead of raising an exception?**
-Raising an exception on the first problem forces you to fix one issue at a time and re-run. Collecting all findings lets you see the full picture in one pass — which is more useful when you have real messy data.
+### Option A: Interactive Streamlit Dashboard
+```powershell
+streamlit run app.py
+```
+Open `http://localhost:8501` to test strategy code in the AST inspector, generate synthetic data, run simulations, view equity curves, and receive local AI explanations.
 
-**Why separate `error` and `warning` severity?**
-Not every data issue should block a backtest. A dataset with 28 rows instead of 30 is worth flagging, but it should not prevent the user from experimenting. Errors are blockers; warnings are things to investigate.
-
-**Why not execute the user's strategy code directly?**
-Running arbitrary Python code (`exec()`) is a security risk. Instead, BacktestGuard uses AST (abstract syntax tree) analysis to inspect the code structure without running it, and a predefined strategy interface for the backtesting engine.
-
----
-
-## Known limitations
-
-- OHLCV validation only checks the data that is given to it. It cannot detect survivorship bias, adjusted vs. unadjusted prices, or corporate-action errors.
-- The strategy inspector flags suspicious patterns but cannot guarantee the absence of look-ahead bias. Some forms of bias require domain knowledge to detect.
-- The local LLM explains findings in natural language but cannot override the deterministic validation results. LLM output is informational only.
-- This project is not production software. It is a portfolio project built for learning and demonstration.
+### Option B: FastAPI Backend
+```powershell
+uvicorn api.server:app --reload --port 8000
+```
+Visit `http://localhost:8000/docs` to test the interactive Swagger REST API.
 
 ---
 
-## What's next
+## Key Design Principles
 
-- Strategy code inspection using Python's `ast` module
-- Moving-average crossover backtesting engine with transaction costs
-- Performance metrics (total return, Sharpe ratio, max drawdown)
-- Validation report combining all findings
-- AI explanation via Ollama
-- FastAPI + Streamlit interface
-- SQLite run history
+1. **Deterministic First, AI Second:** Validation and look-ahead checks are 100% deterministic code rules. The language model only interprets and explains findings to the developer; it never overrides validation decisions.
+2. **Safe Code Inspection:** Never execute untrusted or uploaded strategy Python files with `eval()` or `exec()`. We parse the code structure using Python's `ast` module.
+3. **Execution Lag:** Signals generated at bar $T$ are executed at bar $T+1$ to ensure simulations do not trade on prices known only after the bar closes.
+4. **Frictional Realism:** Slippage and commissions are explicitly accounted for to prevent false impressions of profitability.
 
 ---
 
