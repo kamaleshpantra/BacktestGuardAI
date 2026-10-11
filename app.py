@@ -21,6 +21,7 @@ from metrics.performance import calculate_metrics
 from reporting.report_generator import generate_report
 from storage.db import RunDatabase
 from strategies.moving_average import MovingAverageCrossover
+from strategies.rsi import RSIMeanReversion
 from validate_ohlcv import validate_ohlcv
 
 st.set_page_config(
@@ -82,9 +83,26 @@ with tab_audit:
                 except Exception as e:
                     st.error(f"Error loading CSV: {e}")
 
-        st.subheader("Strategy Config (MA Crossover)")
-        short_w = st.number_input("Short Window", min_value=2, max_value=50, value=10)
-        long_w = st.number_input("Long Window", min_value=5, max_value=150, value=30)
+        st.subheader("Strategy Selection & Parameters")
+        strat_choice = st.selectbox(
+            "Select Strategy Archetype:",
+            ["Trend Following: Moving Average Crossover", "Mean Reversion: Relative Strength Index (RSI)"],
+        )
+
+        if strat_choice == "Trend Following: Moving Average Crossover":
+            short_w = st.number_input("Short Moving Average Window", min_value=2, max_value=50, value=10)
+            long_w = st.number_input("Long Moving Average Window", min_value=5, max_value=150, value=30)
+            selected_strategy = MovingAverageCrossover(short_window=int(short_w), long_window=int(long_w))
+        else:
+            rsi_period = st.number_input("RSI Lookback Period", min_value=2, max_value=50, value=14)
+            oversold = st.number_input("Oversold Buy Threshold", min_value=5.0, max_value=45.0, value=30.0)
+            overbought = st.number_input("Overbought Sell Threshold", min_value=55.0, max_value=95.0, value=70.0)
+            selected_strategy = RSIMeanReversion(
+                period=int(rsi_period),
+                oversold_threshold=float(oversold),
+                overbought_threshold=float(overbought),
+            )
+
         capital = st.number_input("Initial Capital ($)", min_value=1000.0, value=10_000.0)
         slippage = st.number_input("Slippage (%)", min_value=0.0, max_value=1.0, value=0.05) / 100.0
         fee = st.number_input("Commission (%)", min_value=0.0, max_value=1.0, value=0.1) / 100.0
@@ -100,8 +118,8 @@ with tab_audit:
                 # 1. Dataset Validation
                 data_res = validate_ohlcv(df)
 
-                # 2. Strategy Setup
-                strat = MovingAverageCrossover(short_window=int(short_w), long_window=int(long_w))
+                # 2. Strategy Validation
+                strat = selected_strategy
                 config_errs = strat.validate_config()
 
                 if config_errs:

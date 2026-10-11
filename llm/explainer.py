@@ -28,7 +28,7 @@ class OllamaExplainer:
         self,
         model: str = "qwen2.5:1.5b",
         base_url: str = "http://localhost:11434",
-        timeout: float = 15.0,
+        timeout: float = 120.0,
     ) -> None:
         self.model = model
         self.base_url = base_url.rstrip("/")
@@ -37,7 +37,7 @@ class OllamaExplainer:
     def is_available(self) -> bool:
         """Checks if local Ollama daemon is reachable."""
         try:
-            with httpx.Client(timeout=2.0) as client:
+            with httpx.Client(timeout=3.0) as client:
                 res = client.get(f"{self.base_url}/api/tags")
                 return res.status_code == 200
         except Exception:
@@ -57,13 +57,19 @@ class OllamaExplainer:
 
         prompt = self._build_prompt(report)
         try:
-            with httpx.Client(timeout=self.timeout) as client:
+            # Set explicit connect and read timeouts
+            timeout_cfg = httpx.Timeout(self.timeout, connect=10.0)
+            with httpx.Client(timeout=timeout_cfg) as client:
                 response = client.post(
                     f"{self.base_url}/api/generate",
                     json={
                         "model": self.model,
                         "prompt": prompt,
                         "stream": False,
+                        "options": {
+                            "num_predict": 600,  # Room to complete all points without truncation
+                            "temperature": 0.1,  # Focused, deterministic output
+                        },
                     },
                 )
                 if response.status_code == 200:
@@ -77,16 +83,22 @@ class OllamaExplainer:
             return f"Failed to generate AI explanation: {str(e)}"
 
     def _build_prompt(self, report: ValidationReport) -> str:
-        return f"""You are BacktestGuard AI's technical mentor explaining backtesting quality.
-Explain these specific automated findings to a beginner developer.
+        summary_info = {
+            "dataset_passed": report.dataset_passed,
+            "has_lookahead_risk": report.has_lookahead_risk,
+            "metrics": report.metrics,
+            "findings_count": len(report.data_findings) + len(report.code_findings),
+        }
+        import json
+        return f"""You are BacktestGuard AI, a direct quantitative engineering mentor.
+Analyze the backtest summary below and produce EXACTLY 3 concise bullet points for a developer.
+Do NOT include introductory phrases, conversational filler, or greetings. Start directly with the bullet points.
 
-RULES:
-1. Explain WHAT was detected and WHY it matters in trading simulations.
-2. Do not invent new findings or contradict the report.
-3. Keep it clear, concise, and structured.
-4. Never state or imply that any strategy is profitable or guaranteed to work.
+1. **Risk & Return:** Evaluate the return vs max drawdown trade-off directly from the numbers.
+2. **Quality & Frictions:** Assess what the Sharpe ratio and transaction fees reveal about execution quality.
+3. **Simulation Disclaimer:** Explain in 1 sentence why this historical simulation cannot guarantee live market profitability.
 
-REPORT FINDINGS JSON:
-{report.to_json()}
+METRICS:
+{json.dumps(summary_info, indent=2)}
 
-Produce your explanation now in clean markdown:"""
+Analysis:"""
