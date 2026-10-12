@@ -24,13 +24,20 @@ dist/
 build/
 *.egg-info/
 
-# Environment variables — never commit secrets
+# Environment variables & secrets — NEVER commit secrets
 .env
+.env.*
+*.env
+secrets/
+*.pem
+*.key
+token*.json
 
-# OS junk
+# OS junk & temporary files
 .DS_Store
 Thumbs.db
 desktop.ini
+*.log
 
 # IDE files
 .idea/
@@ -41,6 +48,9 @@ desktop.ini
 # Jupyter
 .ipynb_checkpoints/
 
-# SQLite databases created by the app
+# SQLite databases & local data created by the app
 *.db
+*.sqlite
 *.sqlite3
+data_cache/
+*.csv
