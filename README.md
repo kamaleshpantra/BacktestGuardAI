@@ -1,52 +1,105 @@
 # BacktestGuard AI
 
-A Python tool that checks stock-trading backtests for common data quality issues, look-ahead bias, and unrealistic execution assumptions before you trust the simulated results.
+BacktestGuard AI is a Python-based quantitative auditing framework and simulation engine. It inspects historical financial datasets, validates custom trading strategies against look-ahead bias using AST (Abstract Syntax Tree) analysis, executes realistic bar-by-bar backtests with execution lags and friction, and generates AI-driven diagnostic reports.
 
 ---
 
-## Why this exists
+## The Problem It Solves
 
-Backtests are simulations — you apply a trading strategy to historical price data to see how it would have performed. The problem is that a backtest can show great results even when the code is broken, the data is corrupt, or the strategy is accidentally "cheating" by looking at future prices.
+Backtesting simulations often present an illusion of alpha. In quantitative research and algorithmic trading, misleading backtest results typically stem from three root causes:
 
-Some common issues that produce misleading backtest results:
+1. **Dirty Market Data:** Unsorted timestamps, non-positive prices, non-finite values (NaN / Inf), or corrupted OHLC relationships ($Low > High$).
+2. **Look-Ahead Bias (Information Leakage):** Strategies calculating signals using future data (e.g., negative shifts like `df['Close'].shift(-1)`, centered moving windows, global dataset statistics applied to historic bars, or backward indexing).
+3. **Frictionless & Zero-Lag Assumptions:** Fictitious performance caused by executing trades on the exact close bar where signals are generated, or omitting exchange fees and market slippage.
 
-- Historical data with missing values, non-positive prices, or duplicate timestamps
-- Strategies that accidentally use tomorrow's prices to make today's decision (look-ahead bias)
-- Missing transaction costs — commissions and slippage that eat into real-world returns
-- Unrealistic metrics and lack of reproducibility
-
-BacktestGuard AI runs deterministic checks on historical market data and strategy code (using Python's AST), runs simulations through a controlled backtesting engine, and uses a local language model (via Ollama) to explain findings in plain language.
-
-It is a developer and research tool. It does not provide financial advice, and passing its checks does not guarantee profitability in live markets.
+BacktestGuard AI enforces a **deterministic-first** auditing pipeline, guaranteeing that data integrity and code safety are systematically verified before any capital or confidence is committed.
 
 ---
 
-## Current Architecture & Completed Features
+## Key System Architecture
 
-| Feature Component | Implementation Details | Status |
-|---|---|---|
-| **Price & OHLCV Validation** | Validates flat prices and full OHLCV DataFrames (types, order, nulls, bounds, High/Low consistency) | ✅ Completed (97 tests) |
-| **Strategy Contract & Crossover** | `Strategy` abstract base class, look-ahead safe moving average crossover with 1-bar execution lag | ✅ Completed (25 tests) |
-| **AST Code Inspector** | Static syntax tree analysis detecting `.shift(-N)`, `.rolling(center=True)`, global stats, negative `iloc` | ✅ Completed (49 tests) |
-| **Controlled Backtesting Engine** | Bar-by-bar cash & share accounting, configurable fees and slippage modeling | ✅ Completed (4 tests) |
-| **Performance Analytics** | Return, CAGR, Annualized Volatility, Max Drawdown, Sharpe Ratio, Win Rate | ✅ Completed (2 tests) |
-| **Unified Validation Reports** | JSON & Markdown report generation pairing deterministic checks with metrics | ✅ Completed (1 test) |
-| **Local LLM Explainer** | Ollama integration (`qwen2.5:1.5b`) with grounded prompting & graceful offline fallback | ✅ Completed |
-| **SQLite Run History** | Stores audit runs, metrics, and JSON payloads locally without external databases | ✅ Completed |
-| **FastAPI REST API** | Endpoints for dataset validation, code inspection, and audit history (`api/server.py`) | ✅ Completed |
-| **Streamlit Interactive UI** | Multi-tab dashboard for live backtesting, code inspection, and history review (`app.py`) | ✅ Completed |
+```
+                               ┌────────────────────────────────┐
+                               │   Raw Data (CSV / Synthetic)   │
+                               └───────────────┬────────────────┘
+                                               │
+                                               ▼
+                              ┌──────────────────────────────────┐
+                              │  OHLCV & Price Data Validator    │
+                              │  (10 Deterministic Checks)       │
+                              └────────────────┬─────────────────┘
+                                               │
+                      ┌────────────────────────┴────────────────────────┐
+                      ▼                                                 ▼
+      ┌──────────────────────────────┐                ┌───────────────────────────────────┐
+      │   Standard Built-in Logic    │                │    Custom Python Code Strategy    │
+      │   (MA Crossover, RSI Reversion)               │    (Restricted AST Sandbox Loader)│
+      └──────────────┬───────────────┘                └─────────────────┬─────────────────┘
+                     │                                                  │
+                     │                                ┌─────────────────┴─────────────────┐
+                     │                                │   AST Static Security & Bias      │
+                     │                                │   Inspector (Blocks malicious     │
+                     │                                │   imports & future look-ahead)    │
+                     │                                └─────────────────┬─────────────────┘
+                     │                                                  │
+                     └────────────────────────┬─────────────────────────┘
+                                              │
+                                              ▼
+                              ┌──────────────────────────────────┐
+                              │    Bar-by-Bar Backtest Engine    │
+                              │  (1-Bar Lag, Fees, Slippage)     │
+                              └───────────────┬──────────────────┘
+                                              │
+                                              ▼
+                              ┌──────────────────────────────────┐
+                              │    Performance Analytics Core    │
+                              │  (Sharpe, Max DD, CAGR, Win Rate)│
+                              └───────────────┬──────────────────┘
+                                              │
+                     ┌────────────────────────┴────────────────────────┐
+                     ▼                                                 ▼
+     ┌───────────────────────────────┐                 ┌─────────────────────────────────┐
+     │   Unified Explainer (Local    │                 │   Persistent Storage & Alerts   │
+     │   Ollama / Cloud LLM Mentor)  │                 │   (SQLite Run Logs + Telegram)  │
+     └───────────────────────────────┘                 └─────────────────────────────────┘
+```
 
 ---
 
-## Tech Stack
+## Core Capabilities
 
-- **Core & Data:** Python 3.11, pandas, NumPy
-- **Quality & Testing:** pytest (178 passing tests), Ruff (linter/formatter)
-- **Static Analysis:** Python `ast` module (AST-based static code analysis)
-- **Local AI:** Ollama (`qwen2.5:1.5b` or `qwen2.5-coder:7b`) with `httpx`
-- **Application & Storage:** FastAPI, Streamlit, SQLite
+### 1. Robust OHLCV & Price Integrity Engine
+- **Price Validator:** Validates flat price series for invalid types, empty sets, negative/zero prices, and non-finite values.
+- **OHLCV Validator:** Rigorously audits DataFrames for missing columns, duplicate or unsorted timestamps, nulls, invalid volume values, and geometric violations ($High < Low$, $High < Open$, $Low > Close$).
+- Returns structured findings with explicit severity classification (`ERROR` vs `WARNING`), error codes, and row/column indices.
 
-Everything runs locally on your machine with zero paid API subscriptions.
+### 2. AST Static Code Inspector
+- Analyzes Python strategy code without executing unsafe code or arbitrary scripts.
+- Detects look-ahead patterns using Python's `ast` module:
+  - **Negative Shifts (`shift(-k)`):** Accessing future bars.
+  - **Centered Rolling Windows (`rolling(..., center=True)`):** Bilateral window centering.
+  - **Global Aggregate Leakage:** Strategy decisions comparing against global dataset metrics (`df['Close'].mean()`, `max()`, `min()`).
+  - **Negative Slicing / Indexing:** Suspicious index manipulation.
+
+### 3. Safe Dynamic Strategy Sandbox
+- Allows researchers to write custom signal logic directly in Python.
+- Multi-tier execution sandbox: passes AST security scanning (blocks built-ins like `eval`, `exec`, `open`, `os`, `subprocess`) and bias checks before generating trades.
+- Implements the strict `Strategy` abstract base class interface.
+
+### 4. Controlled Backtesting & Metric Suite
+- **Bar-by-Bar Accounting:** Signal generated at close of bar $T$ is filled at bar $T+1$ open.
+- **Frictional Costs:** Configurable per-trade commission fees and slippage models.
+- **Metrics Calculated:** Total Return, Compound Annual Growth Rate (CAGR), Annualized Volatility, Maximum Drawdown, Sharpe Ratio, and Win Rate.
+
+### 5. Multi-Model AI Explainer (Local + Cloud)
+- **Local Ollama Integration:** Runs entirely offline using local lightweight models (e.g. `qwen2.5:1.5b` or `qwen2.5-coder:7b`).
+- **Cloud Fallback:** Supports free-tier cloud endpoints (Groq / OpenAI-compatible API) via sidebar configuration when deployed.
+- Generates 3-point structured mentor summaries explaining data risks, strategy quality, and actionable engineering next steps.
+
+### 6. Automated Alerts & Storage
+- **Telegram Push Alerts:** Formatted Markdown reports sent directly to your phone via Telegram Bot API with performance metrics and AI explanations.
+- **SQLite History:** Local auditing database storing run histories and audit reports.
+- **FastAPI Endpoints:** Webhook triggers and REST endpoints for external systems and pipelines.
 
 ---
 
@@ -54,85 +107,119 @@ Everything runs locally on your machine with zero paid API subscriptions.
 
 ```
 BacktestGuardAI/
-├── app.py                         # Streamlit interactive dashboard
+├── app.py                         # Streamlit interactive dashboard (4 tabs)
 ├── pyproject.toml                 # Dependencies, pytest, and Ruff configuration
-├── .gitignore                     # Caches, virtualenvs, local databases
-├── validate_prices.py             # Validates flat price lists
-├── validate_ohlcv.py              # Validates full OHLCV DataFrames
-├── strategies/
-│   ├── base.py                    # Strategy abstract base class
-│   └── moving_average.py          # MA Crossover strategy
-├── inspection/
-│   └── ast_inspector.py           # AST look-ahead bias detector
-├── backtesting/
-│   └── engine.py                  # Simulation engine with fees & slippage
-├── metrics/
-│   └── performance.py             # Sharpe ratio, drawdown, CAGR, win rate
-├── reporting/
-│   └── report_generator.py        # Unified report builder
-├── llm/
-│   └── explainer.py               # Local Ollama explanation client
-├── storage/
-│   └── db.py                      # SQLite run logging repository
+├── requirements.txt               # Production dependencies for cloud deployment
+├── validate_prices.py             # Flat price list validation
+├── validate_ohlcv.py              # OHLCV DataFrame integrity validation
 ├── api/
-│   └── server.py                  # FastAPI REST endpoints
+│   └── server.py                  # FastAPI REST endpoints & webhook dispatcher
+├── backtesting/
+│   └── engine.py                  # Bar-by-bar backtest simulation engine
+├── data/
+│   └── loader.py                  # Smart CSV loader (multi-vendor column mapping)
+├── inspection/
+│   └── ast_inspector.py           # AST-based static look-ahead bias detector
+├── llm/
+│   ├── explainer.py               # Local Ollama explanation client
+│   └── unified_explainer.py       # Hybrid local/cloud LLM router
+├── metrics/
+│   └── performance.py             # Quant performance metric calculators
+├── notifications/
+│   └── telegram.py                # Direct Telegram Bot API notifier
+├── reporting/
+│   └── report_generator.py        # Unified JSON & Markdown report generator
+├── storage/
+│   └── db.py                      # SQLite database repository for run logs
+├── strategies/
+│   ├── base.py                    # Strategy abstract base class (ABC)
+│   ├── moving_average.py          # MA Crossover strategy
+│   ├── rsi.py                     # RSI Mean-Reversion strategy
+│   └── custom_loader.py           # Safe custom Python strategy sandbox
 └── tests/
-    ├── conftest.py                # sys.path root configuration
-    ├── test_validate_prices.py    # 37 tests
-    ├── test_validate_ohlcv.py     # 60 tests
-    ├── test_strategies.py         # 25 tests
-    ├── test_ast_inspector.py      # 49 tests
-    └── test_backtest_and_metrics.py # 7 tests
+    ├── conftest.py                # Pytest configuration & sys.path setup
+    ├── test_validate_prices.py    # 37 tests (price validation)
+    ├── test_validate_ohlcv.py     # 60 tests (OHLCV DataFrame validation)
+    ├── test_ast_inspector.py      # 49 tests (AST look-ahead detection)
+    ├── test_strategies.py         # 25 tests (MA strategy logic)
+    ├── test_backtest_and_metrics.py# 7 tests (engine, metrics, reporting)
+    ├── test_rsi_strategy.py       # 4 tests (RSI indicator calculation)
+    ├── test_data_loader.py        # 3 tests (CSV normalization)
+    ├── test_telegram_notifier.py  # 2 tests (Telegram alert formatting)
+    └── test_custom_loader.py      # 4 tests (sandbox security & execution)
 ```
 
 ---
 
-## Setup & Quickstart
+## Test Suite & Verification
 
-### 1. Prerequisites
-Python 3.11+ installed. (Optional: [Ollama](https://ollama.com) running for AI explanations).
+The test suite covers edge cases, data errors, code security, and quantitative accuracy across **191 unit and integration tests**:
 
-### 2. Installation
 ```powershell
-# Clone or navigate to the repository
-cd C:\Users\91798\OneDrive\Desktop\BacktestGuardAI
-
-# Run tests to verify the setup
 python -m pytest tests/ -v
 ```
 
-Expected result:
 ```
-178 passed in ~1.5s
+======================= 191 passed, 1 warning in 9.31s ========================
+```
+
+Linting and code style are verified with Ruff:
+```powershell
+python -m ruff check .
+```
+```
+All checks passed!
 ```
 
 ---
 
-## Running the Application
+## Getting Started
 
-### Option A: Interactive Streamlit Dashboard
+### 1. Installation
+Clone the repository and install requirements:
 ```powershell
-streamlit run app.py
+git clone https://github.com/<your-username>/BacktestGuardAI.git
+cd BacktestGuardAI
+pip install -r requirements.txt
 ```
-Open `http://localhost:8501` to test strategy code in the AST inspector, generate synthetic data, run simulations, view equity curves, and receive local AI explanations.
 
-### Option B: FastAPI Backend
+### 2. Running the Interactive Streamlit App
+Launch the web UI using Python's module runner:
+```powershell
+python -m streamlit run app.py
+```
+Open [http://localhost:8501](http://localhost:8501) in your browser:
+- **Tab 1: Full Audit & Backtest:** Upload CSVs or generate synthetic market data, pick or write a custom strategy, run the backtest, view equity charts, and get AI mentor notes.
+- **Tab 2: AST Code Inspector:** Paste raw Python strategy code to check for look-ahead violations.
+- **Tab 3: Telegram Alerts:** Configure your Bot Token and Chat ID to receive instant audit summaries.
+- **Tab 4: Run History:** View stored audit runs from the SQLite database.
+
+### 3. Running the FastAPI Backend (Optional)
 ```powershell
 uvicorn api.server:app --reload --port 8000
 ```
-Visit `http://localhost:8000/docs` to test the interactive Swagger REST API.
+Visit [http://localhost:8000/docs](http://localhost:8000/docs) for the interactive Swagger API documentation.
 
 ---
 
-## Key Design Principles
+## Cloud Deployment (Streamlit Community Cloud)
 
-1. **Deterministic First, AI Second:** Validation and look-ahead checks are 100% deterministic code rules. The language model only interprets and explains findings to the developer; it never overrides validation decisions.
-2. **Safe Code Inspection:** Never execute untrusted or uploaded strategy Python files with `eval()` or `exec()`. We parse the code structure using Python's `ast` module.
-3. **Execution Lag:** Signals generated at bar $T$ are executed at bar $T+1$ to ensure simulations do not trade on prices known only after the bar closes.
-4. **Frictional Realism:** Slippage and commissions are explicitly accounted for to prevent false impressions of profitability.
+1. Push your repository to **GitHub**.
+2. Visit [share.streamlit.io](https://share.streamlit.io) and connect your repository.
+3. Set the Main file path to `app.py`.
+4. (Optional) In the dashboard sidebar, enter a free **Groq API Key** (e.g. `gsk_...` with `llama-3.1-8b-instant`) to enable cloud-based AI explanations without running local Ollama.
+
+---
+
+## Engineering Design Principles
+
+1. **Deterministic Core:** Safety and validation rules do not depend on probabilistic LLM responses. Static code checks and price validations are 100% deterministic.
+2. **AI as an Explainer, Not a Decision-Maker:** Language models explain identified risks and summarize metrics in plain English; they do not dictate whether code passes validation.
+3. **Execution Lag Enforcement:** Signals generated at bar $T$ are executed at bar $T+1$ to mirror live trading realities.
+4. **Zero Forced Dependencies:** The application works entirely offline with local models or pure rule-based reporting if no LLM is available.
 
 ---
 
 ## License
 
-MIT
+MIT License. Developed for research and developer tooling.

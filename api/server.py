@@ -92,7 +92,7 @@ class WebhookAuditRequest(BaseModel):
 @app.post("/audit/webhook-trigger")
 async def webhook_audit_trigger(payload: WebhookAuditRequest):
     """
-    Automated webhook endpoint callable by n8n or cron.
+    Automated webhook endpoint callable by background schedulers, cron, or external webhooks.
     Audits latest price data, runs backtest, and optionally dispatches Telegram alert.
     """
     import numpy as np
